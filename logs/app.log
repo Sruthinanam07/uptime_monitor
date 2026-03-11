@@ -1,0 +1,33 @@
+2026-03-10 21:18:30 | INFO     | uptime_monitor | Session 20260310211744 started — checking 5 websites
+2026-03-10 21:18:30 | DEBUG    | uptime_monitor | Database setup complete
+2026-03-10 21:18:30 | DEBUG    | uptime_monitor | Checking https://google.com
+2026-03-10 21:18:31 | INFO     | uptime_monitor | UP | https://google.com | 632.97ms | 200
+2026-03-10 21:21:33 | INFO     | db_manager | db_manager started
+2026-03-10 21:21:54 | DEBUG    | db_manager | User request: add error_reason column as TEXT to checks table
+2026-03-10 21:21:54 | DEBUG    | db_manager | Database structure fetched
+2026-03-10 21:21:54 | WARNING  | db_manager | Could not fetch sample data — no such column: error_reason
+2026-03-10 21:21:54 | DEBUG    | db_manager | Sending request to Claude: add error_reason column as TEXT to checks table
+2026-03-10 21:21:58 | DEBUG    | db_manager | Claude responded successfully
+2026-03-10 21:22:35 | INFO     | db_manager | SQL executed successfully: ALTER TABLE checks ADD COLUMN error_reason TEXT;
+2026-03-10 21:22:35 | INFO     | db_manager | Database changed: ALTER TABLE checks ADD COLUMN error_reason TEXT;
+2026-03-10 21:22:35 | DEBUG    | db_manager | Database structure fetched
+2026-03-10 21:25:32 | INFO     | db_manager | db_manager exited by user
+2026-03-10 21:28:15 | INFO     | uptime_monitor | Session 20260310212740 started — checking 4 websites
+2026-03-10 21:28:15 | DEBUG    | uptime_monitor | Database setup complete
+2026-03-10 21:28:15 | DEBUG    | uptime_monitor | Checking https://google.com
+2026-03-10 21:28:15 | INFO     | uptime_monitor | UP | https://google.com | 479.49ms | 200
+2026-03-10 21:28:15 | DEBUG    | uptime_monitor | Saved check for https://google.com to database
+2026-03-10 21:28:15 | DEBUG    | uptime_monitor | Checking https://youtube.com
+2026-03-10 21:28:16 | INFO     | uptime_monitor | UP | https://youtube.com | 597.06ms | 200
+2026-03-10 21:28:16 | DEBUG    | uptime_monitor | Saved check for https://youtube.com to database
+2026-03-10 21:28:16 | DEBUG    | uptime_monitor | Checking https://tesla.com
+2026-03-10 21:28:16 | WARNING  | uptime_monitor | DOWN | https://tesla.com | 403 | FORBIDDEN — server is blocking automated/bot requests
+2026-03-10 21:28:16 | DEBUG    | uptime_monitor | Saved check for https://tesla.com to database
+2026-03-10 21:28:16 | INFO     | uptime_monitor | AI agent analyzing incident for https://tesla.com
+2026-03-10 21:28:24 | INFO     | uptime_monitor | AI analysis complete for https://tesla.com
+2026-03-10 21:28:24 | DEBUG    | uptime_monitor | Saved AI analysis for https://tesla.com to database
+2026-03-10 21:28:24 | DEBUG    | uptime_monitor | Checking https://github.com
+2026-03-10 21:28:24 | INFO     | uptime_monitor | UP | https://github.com | 430.93ms | 200
+2026-03-10 21:28:24 | DEBUG    | uptime_monitor | Saved check for https://github.com to database
+2026-03-10 21:28:24 | INFO     | uptime_monitor | SQL analysis report generated for session 20260310212740
+2026-03-10 21:28:24 | INFO     | uptime_monitor | Session 20260310212740 complete

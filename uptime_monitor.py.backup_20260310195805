@@ -1,0 +1,339 @@
+import requests
+import datetime
+import sqlite3
+import anthropic
+import os
+from dotenv import load_dotenv
+
+# ── LOAD ENV ──
+load_dotenv()
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+
+# ── SESSION ID ──
+SESSION_ID = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+
+
+# ── ASK USER FOR WEBSITES ──
+print("Website Uptime Monitor")
+print("="*40)
+print("Enter websites to monitor (one per line)")
+print("When done, just press Enter on empty line")
+print("Example: https://www.google.com")
+print("="*40)
+
+WEBSITES = []
+while True:
+    url = input("Enter URL: ").strip()
+
+    if url == "":
+        break
+
+    if not url.startswith("http"):
+        url = "https://" + url
+
+    WEBSITES.append(url)
+    print(f" Added: {url}")
+
+if not WEBSITES:
+    print("⚠️  No websites entered! Using defaults...")
+    WEBSITES = [
+        "https://www.google.com",
+        "https://www.github.com",
+        "https://httpstat.us/500",
+    ]
+
+print(f"\n Checking {len(WEBSITES)} website(s)...\n")
+
+
+# ── DATABASE SETUP WITH AUTO MIGRATION ──
+def setup_database():
+    conn = sqlite3.connect("uptime_monitor.db")
+    cur = conn.cursor()
+
+    # Base checks table
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS checks (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            url              TEXT,
+            status_code      INTEGER,
+            response_time_ms REAL,
+            is_up            INTEGER,
+            checked_at       TEXT
+        )
+    """)
+
+    # AI analysis table
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS ai_analysis (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            check_id     INTEGER,
+            url          TEXT,
+            analysis     TEXT,
+            analyzed_at  TEXT,
+            FOREIGN KEY (check_id) REFERENCES checks(id)
+        )
+    """)
+
+    # ── ADD NEW COLUMNS HERE ANYTIME ──
+    # Safe to run every time — skips if column already exists
+    migrations = [
+        "ALTER TABLE checks ADD COLUMN session_id TEXT",
+        # "ALTER TABLE checks ADD COLUMN logging TEXT",        ← uncomment to add
+        # "ALTER TABLE checks ADD COLUMN response_size INTEGER", ← uncomment to add
+        # "ALTER TABLE checks ADD COLUMN country TEXT",          ← uncomment to add
+        # "ALTER TABLE checks ADD COLUMN error_message TEXT",    ← uncomment to add
+    ]
+
+    for migration in migrations:
+        try:
+            cur.execute(migration)
+        except:
+            pass  # Column already exists — skip silently
+
+    conn.commit()
+    return conn
+
+
+# ── STEP 1: CHECK WEBSITE ──
+def check_website(url):
+    headers = {"User-Agent": "Mozilla/5.0"}
+    try:
+        start_time = datetime.datetime.now()
+        response = requests.get(url, timeout=15, headers=headers)
+        end_time = datetime.datetime.now()
+        response_time_ms = (end_time - start_time).total_seconds() * 1000
+        is_up = 200 <= response.status_code < 300
+
+        return {
+            "url": url,
+            "status_code": response.status_code,
+            "response_time_ms": round(response_time_ms, 2),
+            "is_up": is_up,
+            "checked_at": start_time.strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+    except (requests.exceptions.ConnectionError,
+            requests.exceptions.ReadTimeout):
+        return {
+            "url": url,
+            "status_code": None,
+            "response_time_ms": None,
+            "is_up": False,
+            "checked_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+
+# ── SAVE CHECK TO DATABASE ──
+def save_to_db(conn, result):
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO checks
+        (session_id, url, status_code, response_time_ms, is_up, checked_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (
+        SESSION_ID,
+        result["url"],
+        result["status_code"],
+        result["response_time_ms"],
+        1 if result["is_up"] else 0,
+        result["checked_at"]
+    ))
+    conn.commit()
+    return cur.lastrowid
+
+
+# ── SAVE AI ANALYSIS TO DATABASE ──
+def save_ai_analysis(conn, check_id, url, analysis):
+    conn.execute("""
+        INSERT INTO ai_analysis (check_id, url, analysis, analyzed_at)
+        VALUES (?, ?, ?, ?)
+    """, (
+        check_id,
+        url,
+        analysis,
+        datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    ))
+    conn.commit()
+
+
+# ── STEP 3: SQL ANALYSIS — CURRENT RUN ONLY ──
+def run_sql_analysis(conn):
+    cur = conn.cursor()
+    print("\n" + "="*50)
+    print("   SQL ANALYSIS REPORT — CURRENT RUN")
+    print("="*50)
+
+    # Average response time
+    print("\n Average Response Time Per Site:")
+    cur.execute("""
+        SELECT url,
+               COUNT(*) as total_checks,
+               ROUND(AVG(response_time_ms), 2) as avg_ms,
+               SUM(CASE WHEN is_up = 0 THEN 1 ELSE 0 END) as times_down
+        FROM checks
+        WHERE session_id = ?
+        GROUP BY url
+        ORDER BY avg_ms DESC
+    """, (SESSION_ID,))
+    rows = cur.fetchall()
+    if rows:
+        for row in rows:
+            print(f"  {row[0]}")
+            print(f"    Checks: {row[1]}  |  Avg: {row[2]}ms  |  Down: {row[3]} times")
+    else:
+        print("  No data yet!")
+
+    # Slowest site
+    print("\n🐢 Slowest Response This Run:")
+    cur.execute("""
+        SELECT url, response_time_ms, checked_at
+        FROM checks
+        WHERE response_time_ms IS NOT NULL
+        AND session_id = ?
+        ORDER BY response_time_ms DESC
+        LIMIT 1
+    """, (SESSION_ID,))
+    row = cur.fetchone()
+    if row:
+        print(f"  {row[0]} → {row[1]}ms at {row[2]}")
+    else:
+        print("  No data yet!")
+
+    # Fastest site
+    print("\n⚡ Fastest Response This Run:")
+    cur.execute("""
+        SELECT url, response_time_ms, checked_at
+        FROM checks
+        WHERE response_time_ms IS NOT NULL
+        AND session_id = ?
+        ORDER BY response_time_ms ASC
+        LIMIT 1
+    """, (SESSION_ID,))
+    row = cur.fetchone()
+    if row:
+        print(f"  {row[0]} → {row[1]}ms at {row[2]}")
+    else:
+        print("  No data yet!")
+
+    # Incidents
+    print("\nIncidents This Run:")
+    cur.execute("""
+        SELECT url, status_code, checked_at
+        FROM checks
+        WHERE is_up = 0
+        AND session_id = ?
+        ORDER BY checked_at DESC
+    """, (SESSION_ID,))
+    rows = cur.fetchall()
+    if rows:
+        for row in rows:
+            print(f"  {row[0]} | Code: {row[1]} | At: {row[2]}")
+    else:
+        print("No incidents this run!")
+
+    # Uptime score
+    print("\nUptime Score This Run:")
+    cur.execute("""
+        SELECT url,
+               ROUND(100.0 * SUM(is_up) / COUNT(*), 1) as uptime_pct
+        FROM checks
+        WHERE session_id = ?
+        GROUP BY url
+        ORDER BY uptime_pct DESC
+    """, (SESSION_ID,))
+    rows = cur.fetchall()
+    if rows:
+        for row in rows:
+            bar = "🟢" if row[1] == 100 else "🟡" if row[1] >= 50 else "🔴"
+            print(f"  {bar} {row[0]} → {row[1]}% uptime")
+    else:
+        print("  No data yet!")
+
+    # AI analysis this run
+    print("\nAI Analysis This Run:")
+    cur.execute("""
+        SELECT a.url, a.analyzed_at, a.analysis
+        FROM ai_analysis a
+        JOIN checks c ON a.check_id = c.id
+        WHERE c.session_id = ?
+        ORDER BY a.analyzed_at DESC
+    """, (SESSION_ID,))
+    rows = cur.fetchall()
+    if rows:
+        for row in rows:
+            print(f"\n  🔎 {row[0]} | Analyzed at: {row[1]}")
+            lines = row[2].split('\n')[:2]
+            for line in lines:
+                if line.strip():
+                    print(f"     {line}")
+    else:
+        print("  No AI analyses this run!")
+
+    print("\n" + "="*50)
+
+
+# ── STEP 4: AI AGENT ──
+def analyze_incident_with_ai(result):
+    if result["is_up"]:
+        return None
+
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+    incident_info = f"""
+    A website monitoring system detected the following incident:
+
+    URL           : {result['url']}
+    Status Code   : {result['status_code']}
+    Response Time : {result['response_time_ms']}ms
+    Checked At    : {result['checked_at']}
+
+    Based on this incident data answer these 5 things:
+    1. Root Cause  : What likely caused this failure?
+    2. Severity    : Is this LOW, MEDIUM or HIGH severity?
+    3. User Impact : How are users affected right now?
+    4. Fix Steps   : What exact steps should the engineer take?
+    5. Escalate?   : Should this be escalated immediately yes or no and why?
+
+    Be concise, practical and clear.
+    Format each point on its own line with the label.
+    """
+
+    client_obj = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    message = client_obj.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=1024,
+        messages=[{"role": "user", "content": incident_info}]
+    )
+
+    return message.content[0].text
+
+
+# ── MAIN ──
+def main():
+    conn = setup_database()
+
+    for site in WEBSITES:
+        result = check_website(site)
+        check_id = save_to_db(conn, result)
+        status = "UP  " if result["is_up"] else "DOWN"
+        print(f"{status} | {result['url']} | {result['response_time_ms']}ms | Status: {result['status_code']}")
+
+        # AI Agent fires for every DOWN incident
+        if not result["is_up"]:
+            print(f"\nAI Agent analyzing incident...")
+            analysis = analyze_incident_with_ai(result)
+            if analysis:
+                save_ai_analysis(conn, check_id, result["url"], analysis)
+                print(f"\n")
+                for line in analysis.split('\n'):
+                    if line.strip():
+                        print(f"  │ {line}")
+                print(f"\n")
+
+    run_sql_analysis(conn)
+    conn.close()
+    print("\n All results and AI analyses saved to uptime_monitor.db")
+
+
+if __name__ == "__main__":
+    main()
