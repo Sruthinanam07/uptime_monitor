@@ -75,6 +75,12 @@ Every DOWN incident sends the full error context to Claude — not just the stat
 
 ---
 
+## License
+
+MIT — see [LICENSE](LICENSE) for details.
+
+---
+
 ## Tech Stack
 
 Python · SQLite · REST APIs · Claude AI API · python-dotenv · requests
